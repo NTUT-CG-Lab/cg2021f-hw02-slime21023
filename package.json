@@ -1,0 +1,11 @@
+{
+  "name": "cg2021f-hw02-slime21023",
+  "version": "1.0.0",
+  "license": "MIT",
+  "scripts": {
+    "dev": "serve ."
+  },
+  "devDependencies": {
+    "serve": "^12.0.1"
+  }
+}
