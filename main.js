@@ -4,7 +4,11 @@ import {
     Color,
     AmbientLight,
     DirectionalLight,
-    WebGLRenderer
+    WebGLRenderer,
+    BufferGeometry,
+    LineBasicMaterial,
+    Vector3,
+    LineSegments
 } from './assets/js/three.module.js'
 import { GUI } from './assets/js/dat.gui.module.js'
 import { OrbitControls } from './assets/js/OrbitControls.js'
@@ -88,14 +92,14 @@ const initGui = () => {
     }
 
     const onChangeMorph = () => {
-        keys.forEach((key, index)=> {
+        keys.forEach((key, index) => {
             mesh.morphTargetInfluences[index] = controls[key]
         })
     }
 
     const onChangePose = () => {
         const index = parseInt(controls.pose)
-        if(index === -1) {
+        if (index === -1) {
             mesh.pose()
             return
         }
@@ -184,6 +188,40 @@ const init = () => {
     cameraControls.minDistance = 10
     cameraControls.maxDistance = 100
     cameraControls.enableRotate = false
+
+    const lineSystem = new DrawLineSystem()
+
+    // add mouse event
+    renderer.domElement.addEventListener('mousedown', () => { lineSystem.addLine() })
+}
+
+class DrawLineSystem {
+    constructor() {
+        this._lines = []
+        this._points = []
+    }
+
+    addLine() {
+        // console.log(clientX, clientY)
+        const geometry = new BufferGeometry()
+        const material = new LineBasicMaterial({ color: 0x0000ff })
+
+        // TODO raycast
+        this._points.push(new Vector3(100, window.innerHeight / 15, camera.position.z -1))
+        this._points.push(new Vector3(100, window.innerHeight / -15,  camera.position.z -1))
+        // this._points.push(new Vector3(10, 0, 0))
+        // this._points.push(new Vector3(0, 0, 0))
+
+        geometry.setFromPoints(this._points)
+        const line = new LineSegments(geometry, material)
+        scene.add(line)
+        this._lines.push(line)
+        console.log(this)
+    }
+
+    getLines() {
+        return this._lines
+    }
 }
 
 window.addEventListener('resize', onWindowResize)
