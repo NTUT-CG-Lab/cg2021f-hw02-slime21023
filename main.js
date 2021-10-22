@@ -8,13 +8,14 @@ import {
     BufferGeometry,
     LineBasicMaterial,
     Vector3,
-    LineSegments,
+    Line,
     Raycaster,
     Vector2,
     PlaneGeometry,
     ShadowMaterial,
     Mesh,
-    MathUtils
+    MathUtils,
+    Object3D
 } from './assets/js/three.module.js'
 import { GUI } from './assets/js/dat.gui.module.js'
 import { OrbitControls } from './assets/js/OrbitControls.js'
@@ -43,6 +44,7 @@ const camera = new OrthographicCamera(
     1000
 )
 camera.position.z = 25
+camera.lookAt(0, 0, 0)
 
 const vpds = []
 const modelFile = 'assets/models/mmd/kizunaai/kizunaai.pmx'
@@ -154,18 +156,20 @@ class DrawLineSystem {
         const geometry = new BufferGeometry()
         const material = new LineBasicMaterial({ color: 0x0000ff })
         if ((this._lines.length + 1) % 2 == 1) {
-            geometry.setFromPoints([
+            geometry.userData.points = [
                 new Vector3(0, y, camera.position.z - 1),
                 new Vector3(2, y, camera.position.z - 1)
-            ])
+            ]
+            geometry.setFromPoints(geometry.userData.points)
         } else {
-            geometry.setFromPoints([
+            geometry.userData.points = [
                 new Vector3(x, y + 1, camera.position.z - 1),
                 new Vector3(x, y - 1, camera.position.z - 1)
-            ])
+            ]
+            geometry.setFromPoints(geometry.userData.points)
         }
 
-        const line = new LineSegments(geometry, material)
+        const line = new Line(geometry, material)
         line.userData.isDraggable = true
         line.userData.isHorizontal = (this._lines.length + 1) % 2 == 1 ? true : false
         line.name = 'line'
@@ -180,11 +184,25 @@ class DrawLineSystem {
     }
 
     copyLines() {
-        const radian = MathUtils.degToRad(180)
-        this._lines[0].rotateY(radian)
-        // const newLines = this._lines.map(item => item.clone())
-        // newLines.forEach(item => item.rotateY(radian))
-        // this._lines.push(...newLines)
+        const newLines = this._lines.map(item => {
+            let geometry = new BufferGeometry()
+            let material = new LineBasicMaterial({ color: 0x0000ff })
+
+            geometry.userData.points = item.geometry.userData.points.map(point => {
+                let newPoint = point.clone()
+                newPoint.setX(point.x == 0 ? 0 : - point.x)
+                return newPoint
+            })
+            geometry.setFromPoints(geometry.userData.points)
+
+            let line = new Line(geometry, material)
+            line.position.copy(item.position)
+            const newX = item.position.x == 0 ? 0: -item.position.x
+            line.position.setX(newX)
+            return line
+        })
+        newLines.forEach(line => scene.add(line))
+        this._lines.push(...newLines)
     }
 
     getLines() {
@@ -324,7 +342,5 @@ document.addEventListener('keydown', ({ key }) => {
         isCopied = true
         console.log(lineSystem.getLines())
     }
-
-
 
 }, false);
