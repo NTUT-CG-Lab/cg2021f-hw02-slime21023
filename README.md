@@ -1,7 +1,7 @@
 # cg2021f-hw02
 
 ## demo
-![demo](./demo/demo.jpg)
+![demo](./demo/demo.JPG)
 
 ## install the dev server
 ``` bash 
