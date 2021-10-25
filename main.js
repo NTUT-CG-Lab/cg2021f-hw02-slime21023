@@ -75,6 +75,7 @@ const animate = () => {
     effect.render(scene, camera)
 }
 
+
 const initGui = () => {
     const gui = new GUI()
     const dictionary = mesh.morphTargetDictionary
@@ -197,7 +198,7 @@ class DrawLineSystem {
 
             let line = new Line(geometry, material)
             line.position.copy(item.position)
-            const newX = item.position.x == 0 ? 0: -item.position.x
+            const newX = item.position.x == 0 ? 0 : -item.position.x
             line.position.setX(newX)
             return line
         })
@@ -209,6 +210,92 @@ class DrawLineSystem {
         return this._lines
     }
 }
+
+class MMDManager {
+    constructor(modelist) {
+        this.gui = new GUI()
+        this.curIndex = 0
+        Promise.all(modelist.map(MMDManager.loadModel)).then(models => {
+            this.models = models
+            refreshGUI(this.models[this.curIndex])
+        })
+    }
+
+    static loadModel(url) {
+        return new Promise(resolve => {
+            let loader = new MMDLoader()
+            let helper = new MMDAnimationHelper()
+
+            let model = { helper }
+            const onProgress = xhr => {
+                if (xhr.lengthComputable) {
+                    const percentComplete = xhr.loaded / xhr.total * 100
+                    console.log(`${Math.round(percentComplete, 2)}% downloaded`)
+                }
+            }
+
+            const loadVpd = vpdFile => new Promise(resolve => {
+                loader.loadVPD(vpdFile, false, vpd => resolve(vpd), onProgress, null)
+            })
+
+            loader.load(url, mesh => {
+                model.mesh = mesh
+                mesh.position.y = -10
+                scene.add(mesh)
+
+                const loadFiles = vpdFiles.map(loadVpd)
+                Promise.all(loadFiles).then(vpds => {
+                    model.vpds = vpds
+                    resolve(model)
+                })
+            }, onProgress, null)
+        })
+    }
+
+    refreshGUI({mesh, helper, vpds}) {
+        this.folders.forEach(this.gui.removeFolder)
+        const poses = this.gui.addFolder('Poses')
+        const morphs = this.gui.addFolder('Morphs')
+        const getBaseName = s => s.slice(s.lastIndexOf('/') + 1)
+
+        const dictionary = mesh.morphTargetDictionary
+        const controls = {}
+        const keys = []
+
+        const onChangePose = () => {
+            const index = parseInt(controls.pose)
+            if (index === -1) {
+                mesh.pose()
+                return
+            }
+            helper.pose(mesh, vpds[index])
+        }
+
+        const onChangeMorph = () => {
+            keys.forEach((key, index) => {
+                mesh.morphTargetInfluences[index] = controls[key]
+            })
+        }
+
+        Object.keys(dictionary).forEach(key => { controls[key] = 0.0 })
+        keys.push(...Object.keys(dictionary))
+        const files = { default: -1 }
+        vpdFiles.forEach((item, index) => { files[getBaseName(item)] = index })
+        poses.add(controls, 'pose', files).onChange(onChangePose)
+        Object.keys(dictionary).forEach(key => {
+            morphs.add(controls, key, 0.0, 1.0, 0.01).onChange(onChangeMorph)
+        })
+
+        onChangeMorph()
+        onChangePose()
+
+        poses.open()
+        morphs.open()
+    }
+}
+
+
+
 const lineSystem = new DrawLineSystem()
 
 const init = () => {
