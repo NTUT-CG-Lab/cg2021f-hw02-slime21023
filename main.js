@@ -46,8 +46,12 @@ const camera = new OrthographicCamera(
 camera.position.z = 25
 camera.lookAt(0, 0, 0)
 
-const vpds = []
-const modelFile = 'assets/models/mmd/kizunaai/kizunaai.pmx'
+const modelList = [
+    'assets/models/mmd/kizunaai/kizunaai.pmx',
+    'assets/models/mmd/るいのれ式物述有栖_配布用フォルダ/物述有栖.pmx',
+    'assets/models/mmd/『天宮こころ(Kokoro Amamiya)』/『天宮こころ(Kokoro Amamiya)』.pmx'
+]
+
 const vpdFiles = [
     'assets/models/mmd/vpds/01.vpd',
     'assets/models/mmd/vpds/02.vpd',
@@ -75,88 +79,29 @@ const animate = () => {
     effect.render(scene, camera)
 }
 
-
-const initGui = () => {
-    const gui = new GUI()
-    const dictionary = mesh.morphTargetDictionary
-    const controls = {}
-    const keys = []
-
-    const poses = gui.addFolder('Poses')
-    const morphs = gui.addFolder('Morphs')
-    const getBaseName = s => s.slice(s.lastIndexOf('/') + 1)
-    const initControls = () => {
-        Object.keys(dictionary).forEach(key => {
-            controls[key] = 0.0
-        })
-
-        controls.pose = -1
-        vpdFiles.forEach(item => {
-            controls[getBaseName(item)] = false
-        })
-    }
-
-    const initKeys = () => {
-        keys.push(...Object.keys(dictionary))
-    }
-
-    const initPoses = () => {
-        const files = { default: -1 }
-        vpdFiles.forEach((item, index) => {
-            files[getBaseName(item)] = index
-        })
-        poses.add(controls, 'pose', files).onChange(onChangePose)
-    }
-
-    const initMorphs = () => {
-        Object.keys(dictionary).forEach(key => {
-            morphs.add(controls, key, 0.0, 1.0, 0.01).onChange(onChangeMorph)
-        })
-    }
-
-    const onChangeMorph = () => {
-        keys.forEach((key, index) => {
-            mesh.morphTargetInfluences[index] = controls[key]
-        })
-    }
-
-    const onChangePose = () => {
-        const index = parseInt(controls.pose)
-        if (index === -1) {
-            mesh.pose()
-            return
-        }
-        helper.pose(mesh, vpds[index])
-    }
-
-    initControls()
-    initKeys()
-    initPoses()
-    initMorphs()
-
-    onChangeMorph()
-    onChangePose()
-
-    poses.open()
-    morphs.open()
-}
-
-class DrawLineSystem {
+class DrawLineSystem extends Object3D {
     constructor() {
+        super()
         const planeGeo = new PlaneGeometry(25, 25)
         const planeMat = new ShadowMaterial()
         planeMat.opacity = 0.25
         this._plane = new Mesh(planeGeo, planeMat)
         this._plane.position.z = camera.position.z - 1.2
-        scene.add(this._plane)
         this._lines = []
-        // this._points = []
+        this._modeColor = [0xff0000, 0x04ff00, 0xff0000, 0x04ff00]
+        this._copyColor = [0xe100ff, 0x00f2ff, 0xe100ff, 0x00f2ff]
+        this._curMode = 1
+        scene.add(this)
+    }
+
+    changeMode(key) {
+        this._curMode = parseInt(key)
     }
 
     addLine(x, y) {
         const geometry = new BufferGeometry()
-        const material = new LineBasicMaterial({ color: 0x0000ff })
-        if ((this._lines.length + 1) % 2 == 1) {
+        const material = new LineBasicMaterial({ color: this._modeColor[this._curMode - 1] })
+        if ((this._curMode) % 2 == 1) {
             geometry.userData.points = [
                 new Vector3(0, y, camera.position.z - 1),
                 new Vector3(2, y, camera.position.z - 1)
@@ -171,17 +116,17 @@ class DrawLineSystem {
         }
 
         const line = new Line(geometry, material)
-        line.userData.isDraggable = true
-        line.userData.isHorizontal = (this._lines.length + 1) % 2 == 1 ? true : false
+        // line.userData.isDraggable = true
+        // line.userData.isHorizontal = (this._lines.length + 1) % 2 == 1 ? true : false
         line.name = 'line'
-        scene.add(line)
-        this._lines.push(line)
+        this.add(line)
+        // this._lines.push(line)
     }
 
     removeLine(item) {
         const { uuid } = item.object
         this._lines = this._lines.filter(item => item.uuid != uuid)
-        scene.remove(item.object)
+        this.remove(item.object)
     }
 
     copyLines() {
@@ -213,11 +158,14 @@ class DrawLineSystem {
 
 class MMDManager {
     constructor(modelist) {
+        this.folders = []
         this.gui = new GUI()
         this.curIndex = 0
         Promise.all(modelist.map(MMDManager.loadModel)).then(models => {
             this.models = models
-            refreshGUI(this.models[this.curIndex])
+            this.curModel = this.models[this.curIndex]
+            scene.add(this.curModel.mesh)
+            this.refreshGUI(this.curModel)
         })
     }
 
@@ -241,7 +189,6 @@ class MMDManager {
             loader.load(url, mesh => {
                 model.mesh = mesh
                 mesh.position.y = -10
-                scene.add(mesh)
 
                 const loadFiles = vpdFiles.map(loadVpd)
                 Promise.all(loadFiles).then(vpds => {
@@ -252,10 +199,11 @@ class MMDManager {
         })
     }
 
-    refreshGUI({mesh, helper, vpds}) {
+    refreshGUI({ mesh, helper, vpds }) {
         this.folders.forEach(this.gui.removeFolder)
         const poses = this.gui.addFolder('Poses')
         const morphs = this.gui.addFolder('Morphs')
+        this.folders = [poses, morphs]
         const getBaseName = s => s.slice(s.lastIndexOf('/') + 1)
 
         const dictionary = mesh.morphTargetDictionary
@@ -278,6 +226,11 @@ class MMDManager {
         }
 
         Object.keys(dictionary).forEach(key => { controls[key] = 0.0 })
+        controls.pose = -1
+        vpdFiles.forEach(item => {
+            controls[getBaseName(item)] = false
+        })
+
         keys.push(...Object.keys(dictionary))
         const files = { default: -1 }
         vpdFiles.forEach((item, index) => { files[getBaseName(item)] = index })
@@ -294,14 +247,12 @@ class MMDManager {
     }
 }
 
-
-
+const manager = new MMDManager(modelList)
 const lineSystem = new DrawLineSystem()
 
 const init = () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
-
 
     const ambient = new AmbientLight(0x666666)
     scene.add(ambient)
@@ -323,33 +274,6 @@ const init = () => {
             console.log(`${Math.round(percentComplete, 2)}% downloaded`)
         }
     }
-
-    helper = new MMDAnimationHelper()
-    const loader = new MMDLoader()
-
-
-    loader.load(modelFile, object => {
-        mesh = object
-        mesh.position.y = -10
-        scene.add(mesh)
-
-        let vpdIndex = 0
-        const loadVpd = () => {
-            const vpdFile = vpdFiles[vpdIndex]
-            loader.loadVPD(vpdFile, false, vpd => {
-                vpds.push(vpd)
-                vpdIndex++
-
-                if (vpdIndex < vpdFiles.length) {
-                    loadVpd()
-                } else {
-                    initGui()
-                }
-            }, onProgress, null)
-        }
-
-        loadVpd()
-    }, onProgress, null)
 
     const cameraControls = new OrbitControls(camera, renderer.domElement)
     cameraControls.minDistance = 10
@@ -424,10 +348,16 @@ window.addEventListener('resize', onWindowResize)
 
 let isCopied = false
 document.addEventListener('keydown', ({ key }) => {
+    if (key == '1' || key == '2' || key == '3' || key == '4') {
+        lineSystem.changeMode(key)
+    }
+
     if (key == 'q' || key == 'Q') {
         lineSystem.copyLines()
         isCopied = true
         console.log(lineSystem.getLines())
     }
+
+
 
 }, false);
