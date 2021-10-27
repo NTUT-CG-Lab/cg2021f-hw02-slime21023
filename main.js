@@ -14,7 +14,6 @@ import {
     PlaneGeometry,
     ShadowMaterial,
     Mesh,
-    MathUtils,
     Object3D
 } from './assets/js/three.module.js'
 import { GUI } from './assets/js/dat.gui.module.js'
@@ -29,7 +28,7 @@ Ammo().then(AmmoLib => {
     animate()
 })
 
-let renderer, effect, mesh, helper
+let renderer, effect
 // scene
 const scene = new Scene()
 scene.background = new Color(0xffffff)
@@ -87,10 +86,11 @@ class DrawLineSystem extends Object3D {
         planeMat.opacity = 0.25
         this._plane = new Mesh(planeGeo, planeMat)
         this._plane.position.z = camera.position.z - 1.2
-        this._lines = []
         this._modeColor = [0xff0000, 0x04ff00, 0xff0000, 0x04ff00]
         this._copyColor = [0xe100ff, 0x00f2ff, 0xe100ff, 0x00f2ff]
         this._curMode = 1
+        this.isCopied = false
+        this.originLineArray = new Array(4)
         scene.add(this)
     }
 
@@ -101,58 +101,92 @@ class DrawLineSystem extends Object3D {
     addLine(x, y) {
         const geometry = new BufferGeometry()
         const material = new LineBasicMaterial({ color: this._modeColor[this._curMode - 1] })
+        let points
         if ((this._curMode) % 2 == 1) {
-            geometry.userData.points = [
+            points = [
                 new Vector3(0, y, camera.position.z - 1),
                 new Vector3(2, y, camera.position.z - 1)
             ]
-            geometry.setFromPoints(geometry.userData.points)
+            geometry.setFromPoints(points)
         } else {
-            geometry.userData.points = [
+            points = [
                 new Vector3(x, y + 1, camera.position.z - 1),
                 new Vector3(x, y - 1, camera.position.z - 1)
             ]
-            geometry.setFromPoints(geometry.userData.points)
+            geometry.setFromPoints(points)
         }
 
         const line = new Line(geometry, material)
-        // line.userData.isDraggable = true
-        // line.userData.isHorizontal = (this._lines.length + 1) % 2 == 1 ? true : false
+        line.userData.points = points
+        line.userData.mode = this._curMode
+        line.userData.isOriginal = true
         line.name = 'line'
+        this.originLineArray[this._curMode -1] = line
         this.add(line)
-        // this._lines.push(line)
     }
 
     removeLine(item) {
         const { uuid } = item.object
-        this._lines = this._lines.filter(item => item.uuid != uuid)
         this.remove(item.object)
     }
 
     copyLines() {
-        const newLines = this._lines.map(item => {
-            let geometry = new BufferGeometry()
-            let material = new LineBasicMaterial({ color: 0x0000ff })
+        // if(!this.isCopied) return
+        const originLine = this.children.filter(item => item.userData.isOriginal == true)
+        console.log(originLine)
+        const newLines = originLine.map(item => {
+            const { mode, points } = item.userData
+            const geometry = new BufferGeometry()
+            const material = new LineBasicMaterial({ color: this._copyColor[mode - 1] })
 
-            geometry.userData.points = item.geometry.userData.points.map(point => {
+            geometry.setFromPoints(points.map(point => {
                 let newPoint = point.clone()
                 newPoint.setX(point.x == 0 ? 0 : - point.x)
                 return newPoint
-            })
-            geometry.setFromPoints(geometry.userData.points)
+            }))
 
-            let line = new Line(geometry, material)
-            line.position.copy(item.position)
-            const newX = item.position.x == 0 ? 0 : -item.position.x
-            line.position.setX(newX)
+            const line = new Line(geometry, material)
+            line.userData.points = points
+            line.userData.mode = mode
+            line.userData.isOriginal = false
+            line.name = 'line'
             return line
         })
-        newLines.forEach(line => scene.add(line))
-        this._lines.push(...newLines)
+        newLines.forEach(item => this.add(item))
+        // this.isCopied = true
     }
 
-    getLines() {
-        return this._lines
+    // TODO rebuild
+    getLinesData() {
+        let data = {}
+        const [l1, l2, l3, l4] = this.originLineArray 
+        if (l1) {
+            data.line_locationy_3 =  l1.userData.points[0].y
+            data.line_locationy_4 =  l1.userData.points[0].y
+        }
+
+        if (l2) {
+            data.line_locationx_1 =  l2.userData.points[0].x
+            data.line_locationx_3 =  l2.userData.points[0].x
+        }
+
+        if (l3) {
+            data.line_locationy_1 =  l3.userData.points[0].y
+            data.line_locationy_2 =  l3.userData.points[0].y
+        }
+
+        if (l4) {
+            data.line_locationx_2 =  l4.userData.points[0].x
+            data.line_locationx_4 =  l4.userData.points[0].x
+        }
+        return data
+    }
+
+    removeAll() {
+        this.clear()
+        this._curMode = 1
+        this.isCopied = false
+        this.originLineArray = new Array(4)
     }
 }
 
@@ -163,9 +197,9 @@ class MMDManager {
         this.curIndex = 0
         Promise.all(modelist.map(MMDManager.loadModel)).then(models => {
             this.models = models
-            this.curModel = this.models[this.curIndex]
-            scene.add(this.curModel.mesh)
-            this.refreshGUI(this.curModel)
+            const curModel = this.models[this.curIndex]
+            scene.add(curModel.mesh)
+            this.refreshGUI(curModel)
         })
     }
 
@@ -200,7 +234,7 @@ class MMDManager {
     }
 
     refreshGUI({ mesh, helper, vpds }) {
-        this.folders.forEach(this.gui.removeFolder)
+        this.folders.forEach( item => this.gui.removeFolder(item))
         const poses = this.gui.addFolder('Poses')
         const morphs = this.gui.addFolder('Morphs')
         this.folders = [poses, morphs]
@@ -245,6 +279,32 @@ class MMDManager {
         poses.open()
         morphs.open()
     }
+
+    next() {
+        const index = this.curIndex
+        if (index == this.models.length - 1) {
+            // TODO alert
+            return
+        }
+        scene.remove(this.models[index].mesh)
+        this.curIndex = index + 1
+        const curModel = this.models[this.curIndex]
+        scene.add(curModel.mesh)
+        this.refreshGUI(curModel)
+    }
+
+    last() {
+        const index = this.curIndex
+        if (index == 0) {
+            // TODO alert
+            return
+        }
+        scene.remove(this.models[index].mesh)
+        this.curIndex = index - 1
+        const curModel = this.models[this.curIndex]
+        scene.add(curModel.mesh)
+        this.refreshGUI(curModel)
+    }
 }
 
 const manager = new MMDManager(modelList)
@@ -252,6 +312,7 @@ const lineSystem = new DrawLineSystem()
 
 const init = () => {
     const container = document.createElement('div')
+    container.classList.add("three")
     document.body.appendChild(container)
 
     const ambient = new AmbientLight(0x666666)
@@ -268,13 +329,6 @@ const init = () => {
 
     effect = new OutlineEffect(renderer)
 
-    const onProgress = xhr => {
-        if (xhr.lengthComputable) {
-            const percentComplete = xhr.loaded / xhr.total * 100
-            console.log(`${Math.round(percentComplete, 2)}% downloaded`)
-        }
-    }
-
     const cameraControls = new OrbitControls(camera, renderer.domElement)
     cameraControls.minDistance = 10
     cameraControls.maxDistance = 100
@@ -284,17 +338,20 @@ const init = () => {
 
     // add mouse event
     let lastPosition = new Vector2()
-    renderer.domElement.addEventListener('mousedown', ({ clientX, clientY, which }) => {
+    renderer.domElement.addEventListener('mousedown', ({ currentTarget, clientX, clientY, which }) => {
         if (which != 1) return
+
+        const { left, top, width, height } = currentTarget.getBoundingClientRect()
+
         const mouse = new Vector2(
-            (clientX / window.innerWidth) * 2 - 1,
-            - (clientY / window.innerHeight) * 2 + 1
+            ((clientX - left + 1) / width) * 2 - 1,
+            - ((clientY - top + 1) / height) * 2 + 1
         )
+
         lastPosition.copy(mouse)
         raycaster.setFromCamera(mouse, camera)
         const intersects = raycaster.intersectObjects(scene.children)
         const firstItem = intersects.length > 0 ? intersects[0] : null
-        // console.log(firstItem)
         if (!firstItem) return
         if (firstItem && firstItem.object.name === 'line') {
             lineSystem.removeLine(firstItem)
@@ -304,49 +361,11 @@ const init = () => {
         const { x, y } = firstItem.point
         lineSystem.addLine(x, y)
     })
-
-    renderer.domElement.addEventListener('mousemove', ({ clientX, clientY, buttons }) => {
-        if (buttons != 1) return
-        const mouse = new Vector2(
-            (clientX / window.innerWidth) * 2 - 1,
-            - (clientY / window.innerHeight) * 2 + 1
-        )
-        raycaster.setFromCamera(mouse, camera)
-        const offset = mouse.clone().sub(lastPosition)
-        lastPosition.copy(mouse)
-
-        const intersects = raycaster.intersectObjects(scene.children)
-        const item = intersects.length > 0 ? intersects[0] : null
-        if (!item) return
-        if (item && item.object.name === 'line') {
-            if (item.object.userData.isDraggable == false) return
-            if (item.object.userData.isHorizontal == true) {
-                item.object.position.y += offset.y * 0.2
-            } else {
-                item.object.position.x += offset.x * 0.2
-            }
-        }
-    })
-
-    renderer.domElement.addEventListener('mouseup', ({ clientX, clientY }) => {
-        const mouse = new Vector2(
-            (clientX / window.innerWidth) * 2 - 1,
-            - (clientY / window.innerHeight) * 2 + 1
-        )
-        raycaster.setFromCamera(mouse, camera)
-        const intersects = raycaster.intersectObjects(scene.children)
-        const item = intersects.length > 0 ? intersects[0] : null
-        if (!item) return
-        if (item && item.object.name === 'line') {
-            item.object.userData.isDraggable = false
-        }
-    })
-
 }
 
 window.addEventListener('resize', onWindowResize)
 
-let isCopied = false
+let modelData = new Array(modelList.length)
 document.addEventListener('keydown', ({ key }) => {
     if (key == '1' || key == '2' || key == '3' || key == '4') {
         lineSystem.changeMode(key)
@@ -354,10 +373,28 @@ document.addEventListener('keydown', ({ key }) => {
 
     if (key == 'q' || key == 'Q') {
         lineSystem.copyLines()
-        isCopied = true
-        console.log(lineSystem.getLines())
     }
 
+    if (key == 'a' || key == 'A') {
+        const index = manager.curIndex
+        const data = lineSystem.getLinesData()
+        modelData[index] = { location: modelList[index], ...data }
+        manager.last()
+    }
+
+    if (key == 'd' || key == 'D') {
+        const index = manager.curIndex
+        const data = lineSystem.getLinesData()
+        modelData[index] = { location: modelList[index], ...data }
+        manager.next()
+    }
+
+    if (key == 's' || key == 'S') {
+        const index = manager.curIndex
+        const data = lineSystem.getLinesData()
+        modelData[index] = { location: modelList[index], ...data }
+        console.log(modelData)
+    }
 
 
 }, false);
