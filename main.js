@@ -131,7 +131,6 @@ class DrawLineSystem extends Object3D {
     }
 
     copyLines() {
-        // if(!this.isCopied) return
         const originLine = this.children.filter(item => item.userData.isOriginal == true)
         console.log(originLine)
         const newLines = originLine.map(item => {
@@ -153,10 +152,8 @@ class DrawLineSystem extends Object3D {
             return line
         })
         newLines.forEach(item => this.add(item))
-        // this.isCopied = true
     }
 
-    // TODO rebuild
     getLinesData() {
         let data = {}
         const [l1, l2, l3, l4] = this.originLineArray 
@@ -182,7 +179,7 @@ class DrawLineSystem extends Object3D {
         return data
     }
 
-    removeAll() {
+    reset() {
         this.clear()
         this._curMode = 1
         this.isCopied = false
@@ -283,7 +280,7 @@ class MMDManager {
     next() {
         const index = this.curIndex
         if (index == this.models.length - 1) {
-            // TODO alert
+            alert('It is the last one.')
             return
         }
         scene.remove(this.models[index].mesh)
@@ -296,7 +293,7 @@ class MMDManager {
     last() {
         const index = this.curIndex
         if (index == 0) {
-            // TODO alert
+            alert('It is the first one.')
             return
         }
         scene.remove(this.models[index].mesh)
@@ -366,7 +363,23 @@ const init = () => {
 window.addEventListener('resize', onWindowResize)
 
 let modelData = new Array(modelList.length)
-document.addEventListener('keydown', ({ key }) => {
+const saveFile = async (data) => {
+    const options = {
+        suggestedName: 'model_data.json',
+        types: [
+            {
+                description: 'Model Data List Files',
+                accept: { 'application/json': ['.json'] }
+            }
+        ]
+    }
+    const handle = await window.showSaveFilePicker(options)
+    const writable = await handle.createWritable()
+    await writable.write(JSON.stringify(data))
+    await writable.close()
+}
+
+document.addEventListener('keydown', async ({ key }) => {
     if (key == '1' || key == '2' || key == '3' || key == '4') {
         lineSystem.changeMode(key)
     }
@@ -379,6 +392,7 @@ document.addEventListener('keydown', ({ key }) => {
         const index = manager.curIndex
         const data = lineSystem.getLinesData()
         modelData[index] = { location: modelList[index], ...data }
+        lineSystem.reset()
         manager.last()
     }
 
@@ -386,6 +400,7 @@ document.addEventListener('keydown', ({ key }) => {
         const index = manager.curIndex
         const data = lineSystem.getLinesData()
         modelData[index] = { location: modelList[index], ...data }
+        lineSystem.reset()
         manager.next()
     }
 
@@ -393,8 +408,6 @@ document.addEventListener('keydown', ({ key }) => {
         const index = manager.curIndex
         const data = lineSystem.getLinesData()
         modelData[index] = { location: modelList[index], ...data }
-        console.log(modelData)
+        await saveFile({ modellist: modelData })
     }
-
-
 }, false);
